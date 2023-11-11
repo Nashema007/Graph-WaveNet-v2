@@ -9,6 +9,7 @@ class Trainer():
         self.optimizer = optim.Adam(self.model.parameters(), lr=lrate, weight_decay=wdecay)
         self.scaler = scaler
         self.clip = clip
+        self.loss = util.calc_metrics
         self.scheduler = optim.lr_scheduler.LambdaLR(
             self.optimizer, lr_lambda=lambda epoch: lr_decay_rate ** epoch)
 
@@ -24,7 +25,7 @@ class Trainer():
         output = self.model(input).transpose(1,3)  # now, output = [batch_size,1,num_nodes, seq_length]
         predict = self.scaler.inverse_transform(output)
         assert predict.shape[1] == 1
-        mae, mape, rmse = util.calc_metrics(predict.squeeze(1), real_val, null_val=0.0)
+        mae, mape, rmse = self.loss(predict.squeeze(1), real_val, null_val=0.0)
         mae.backward()
         if self.clip is not None:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
@@ -38,5 +39,5 @@ class Trainer():
         real = torch.unsqueeze(real_val,dim=1)
         predict = self.scaler.inverse_transform(output)
         predict = torch.clamp(predict, min=0., max=70.)
-        mae, mape, rmse = [x.item() for x in util.calc_metrics(predict, real, null_val=0.0)]
+        mae, mape, rmse = [x.item() for x in self.loss(predict, real, null_val=0.0)]
         return mae, mape, rmse

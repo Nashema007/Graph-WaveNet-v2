@@ -34,7 +34,7 @@ class GraphConvNet(nn.Module):
 
 class GWNet(nn.Module):
     def __init__(self, device, num_nodes, dropout=0.3, supports=None, do_graph_conv=True,
-                 addaptadj=True, aptinit=None, in_dim=2, out_dim=12,
+                 adaptive_adjacency_matrix=True, aptinit=None, in_dim=2, out_dim=12,
                  residual_channels=32, dilation_channels=32, cat_feat_gc=False,
                  skip_channels=256, end_channels=512, kernel_size=2, blocks=4, layers=2,
                  apt_size=10):
@@ -44,7 +44,7 @@ class GWNet(nn.Module):
         self.layers = layers
         self.do_graph_conv = do_graph_conv
         self.cat_feat_gc = cat_feat_gc
-        self.addaptadj = addaptadj
+        self.adaptive_adjacency_matrix = adaptive_adjacency_matrix
 
 
         if self.cat_feat_gc:
@@ -63,7 +63,7 @@ class GWNet(nn.Module):
         receptive_field = 1
 
         self.supports_len = len(self.fixed_supports)
-        if do_graph_conv and addaptadj:
+        if do_graph_conv and adaptive_adjacency_matrix:
             if aptinit is None:
                 nodevecs = torch.randn(num_nodes, apt_size), torch.randn(apt_size, num_nodes)
             else:
@@ -107,10 +107,10 @@ class GWNet(nn.Module):
     @classmethod
     def from_args(cls, args, device, supports, aptinit, **kwargs):
         defaults = dict(dropout=args.dropout, supports=supports,
-                        do_graph_conv=args.do_graph_conv, addaptadj=args.addaptadj, aptinit=aptinit,
+                        do_graph_conv=args.do_graph_conv, adaptive_adjacency_matrix=args.adaptive_adjacency_matrix, aptinit=aptinit,
                         in_dim=args.in_dim, apt_size=args.apt_size, out_dim=args.seq_length,
-                        residual_channels=args.nhid, dilation_channels=args.nhid,
-                        skip_channels=args.nhid * 8, end_channels=args.nhid * 16,
+                        residual_channels=args.num_hid, dilation_channels=args.num_hid,
+                        skip_channels=args.num_hid * 8, end_channels=args.num_hid * 16,
                         cat_feat_gc=args.cat_feat_gc)
         defaults.update(**kwargs)
         model = cls(device, args.num_nodes, **defaults)
@@ -141,7 +141,7 @@ class GWNet(nn.Module):
         skip = 0
         adjacency_matrices = self.fixed_supports
         # calculate the current adaptive adj matrix once per iteration
-        if self.addaptadj:
+        if self.adaptive_adjacency_matrix:
             adp = F.softmax(F.relu(torch.mm(self.nodevec1, self.nodevec2)), dim=1)
             adjacency_matrices = self.fixed_supports + [adp]
 

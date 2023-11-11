@@ -6,3 +6,11 @@ preds.csv
 data/
 .DS_Store
 *.pkl
+wandb
+data
+__pycache__
+venv
+/results
+/notebooks/**csv
+/notebooks/**npz
+/logs

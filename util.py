@@ -7,6 +7,7 @@ import pandas as pd
 import scipy.sparse as sp
 import torch
 from scipy.sparse import linalg
+import wandb
 
 DEFAULT_DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
@@ -128,19 +129,19 @@ def load_pickle(pickle_file):
     return pickle_data
 
 ADJ_CHOICES = ['scalap', 'normlap', 'symnadj', 'transition', 'identity']
-def load_adj(pkl_filename, adjtype):
+def load_adj(pkl_filename, adjacency_type):
     sensor_ids, sensor_id_to_ind, adj_mx = load_pickle(pkl_filename)
-    if adjtype == "scalap":
+    if adjacency_type == "scalap":
         adj = [calculate_scaled_laplacian(adj_mx)]
-    elif adjtype == "normlap":
+    elif adjacency_type == "normlap":
         adj = [calculate_normalized_laplacian(adj_mx).astype(np.float32).todense()]
-    elif adjtype == "symnadj":
+    elif adjacency_type == "symnadj":
         adj = [sym_adj(adj_mx)]
-    elif adjtype == "transition":
+    elif adjacency_type == "transition":
         adj = [asym_adj(adj_mx)]
-    elif adjtype == "doubletransition":
+    elif adjacency_type == "doubletransition":
         adj = [asym_adj(adj_mx), asym_adj(np.transpose(adj_mx))]
-    elif adjtype == "identity":
+    elif adjacency_type == "identity":
         adj = [np.diag(np.ones(adj_mx.shape[0])).astype(np.float32)]
     else:
         error = 0
@@ -183,6 +184,31 @@ def calc_metrics(preds, labels, null_val=0.):
     rmse = torch.sqrt(mse)
     return mae, mape, rmse
 
+def masked_mae_station(preds, labels, null_val=np.nan):
+    if np.isnan(null_val):
+        mask = ~torch.isnan(labels)
+    else:
+        mask = (labels != null_val)
+    mask = mask.float()
+    mask /= torch.mean((mask))
+    mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
+    loss = torch.abs(preds - labels)
+    loss = loss * mask
+    loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
+    return loss
+
+def process_train_valid_station_loss(station_loss):
+    return station_loss.reshape(-1, station_loss.shape[-2], station_loss.shape[-1]).mean(axis=0).reshape(station_loss.shape[-1], -1).mean(axis=0)
+
+def log_metrics_predictions(test_station_loss,train_station_loss, valid_station_loss):
+    wandb.log({'Stations Train Loss Table': wandb.Table(dataframe=pd.DataFrame(train_station_loss))})
+    wandb.log({'Stations Validation Loss Table': wandb.Table(dataframe=pd.DataFrame(valid_station_loss))})
+    wandb.log({'Stations Test Loss Table': wandb.Table(dataframe=pd.DataFrame(test_station_loss))})
+    
+    
+
+def save_files(path, **kwargs):
+    np.savez_compressed(path, **kwargs)
 
 def mask_and_fillna(loss, mask):
     loss = loss * mask
@@ -193,6 +219,9 @@ def mask_and_fillna(loss, mask):
 def calc_tstep_metrics(model, device, test_loader, scaler, realy, seq_length) -> pd.DataFrame:
     model.eval()
     outputs = []
+    predList = []
+    realList = []
+    test_station_loss = []
     for _, (x, __) in enumerate(test_loader.get_iterator()):
         testx = torch.Tensor(x).to(device).transpose(1, 3)
         with torch.no_grad():
@@ -205,9 +234,20 @@ def calc_tstep_metrics(model, device, test_loader, scaler, realy, seq_length) ->
         pred = scaler.inverse_transform(yhat[:, :, i])
         pred = torch.clamp(pred, min=0., max=70.)
         real = realy[:, :, i]
+        predList.append(pred.cpu().detach().numpy())
+        realList.append(real.cpu().detach().numpy())
+        
         test_met.append([x.item() for x in calc_metrics(pred, real)])
+        test_station_loss.append(masked_mae_station(pred, real, 0.0).cpu().detach().numpy().mean(axis=0).reshape((1, -1)).flatten())
+        metrics = calc_metrics(pred, real)
+        test_metrics = {
+            "MAE/Test": metrics[0],
+            "MAPE/Test": metrics[1],
+            "RMSE/Test": metrics[2]
+        }
+        wandb.log(test_metrics)
     test_met_df = pd.DataFrame(test_met, columns=['mae', 'mape', 'rmse']).rename_axis('t')
-    return test_met_df, yhat
+    return test_met_df, yhat, predList, realList, test_station_loss
 
 
 def _to_ser(arr):
@@ -223,11 +263,11 @@ def make_pred_df(realy, yhat, scaler, seq_length):
 
 
 def make_graph_inputs(args, device):
-    sensor_ids, sensor_id_to_ind, adj_mx = load_adj(args.adjdata, args.adjtype)
+    sensor_ids, sensor_id_to_ind, adj_mx = load_adj(args.adjdata, args.adjacency_type)
     supports = [torch.tensor(i).to(device) for i in adj_mx]
-    aptinit = None if args.randomadj else supports[0]  # ignored without do_graph_conv and add_apt_adj
-    if args.aptonly:
-        if not args.addaptadj and args.do_graph_conv: raise ValueError(
+    aptinit = None if args.random_init_adjacency_matrix else supports[0]  # ignored without do_graph_conv and add_apt_adj
+    if args.adaptive_adjacency_matrix_only:
+        if not args.adaptive_adjacency_matrix and args.do_graph_conv: raise ValueError(
             'WARNING: not using adjacency matrix')
         supports = None
     return aptinit, supports
@@ -235,21 +275,21 @@ def make_graph_inputs(args, device):
 
 def get_shared_arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--device', type=str, default='cuda:0', help='')
-    parser.add_argument('--data', type=str, default='data/METR-LA', help='data path')
-    parser.add_argument('--adjdata', type=str, default='data/sensor_graph/adj_mx.pkl',
+    parser.add_argument('--device', type=str, default='cuda:1', help='')
+    parser.add_argument('--data', type=str, default='data/PEMS-BAY', help='data path')
+    parser.add_argument('--adjdata', type=str, default='data/sensor_graph/adj_mx_bay.pkl',
                         help='adj data path')
-    parser.add_argument('--adjtype', type=str, default='doubletransition', help='adj type', choices=ADJ_CHOICES)
+    parser.add_argument('--adjacency_type', type=str, default='doubletransition', help='adj type', choices=ADJ_CHOICES)
     parser.add_argument('--do_graph_conv', action='store_true',
                         help='whether to add graph convolution layer')
-    parser.add_argument('--aptonly', action='store_true', help='whether only adaptive adj')
-    parser.add_argument('--addaptadj', action='store_true', help='whether add adaptive adj')
-    parser.add_argument('--randomadj', action='store_true',
+    parser.add_argument('--adaptive_adjacency_matrix_only', action='store_true', help='whether only adaptive adj')
+    parser.add_argument('--adaptive_adjacency_matrix', action='store_true', help='whether add adaptive adj')
+    parser.add_argument('--random_init_adjacency_matrix', action='store_true',
                         help='whether random initialize adaptive adj')
     parser.add_argument('--seq_length', type=int, default=12, help='')
-    parser.add_argument('--nhid', type=int, default=40, help='Number of channels for internal conv')
+    parser.add_argument('--num_hid', type=int, default=40, help='Number of channels for internal conv')
     parser.add_argument('--in_dim', type=int, default=2, help='inputs dimension')
-    parser.add_argument('--num_nodes', type=int, default=207, help='number of nodes')
+    parser.add_argument('--num_nodes', type=int, default=325, help='number of nodes') # PEM:325 METR:207
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--dropout', type=float, default=0.3, help='dropout rate')
     parser.add_argument('--n_obs', default=None, help='Only use this many observations. For unit testing.')
@@ -257,4 +297,6 @@ def get_shared_arg_parser():
     parser.add_argument('--cat_feat_gc', action='store_true')
     parser.add_argument('--fill_zeroes', action='store_true')
     parser.add_argument('--checkpoint', type=str, help='')
+    parser.add_argument('--seed', type=int, default=99, help='random tseed')
+    parser.add_argument('--dataset_name', type=str, default='PEMS-BAY', help='Dataset name')
     return parser

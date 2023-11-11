@@ -37,19 +37,19 @@ Note: train.py saves metrics to a directory specified by the `--save` arg in met
 
 Model that gets (3.00 - 3.02 Test MAE, ~2.73 Validation MAE)
 ```
-python train.py --cat_feat_gc --fill_zeroes --do_graph_conv --addaptadj  --randomadj --es_patience 20 --save logs/baseline_v2
+python train.py --cat_feat_gc --fill_zeroes --do_graph_conv --adaptive_adjacency_matrix  --random_init_adjacency_matrix --es_patience 20 --save logs/baseline_v2
 ```
 
 Finetuning (2.99 - 3.00 MAE)
 ```
 python generate_training_data.py --seq_length_y 6 --output_dir data/METR-LA_12_6
-python train.py --data  data/METR-LA_12_6 --cat_feat_gc --fill_zeroes --do_graph_conv --addaptadj  --randomadj --es_patience 20 --save logs/front_6
-python train.py --checkpoint  logs/front_6/best_model.pth --cat_feat_gc --fill_zeroes --do_graph_conv --addaptadj  --randomadj --es_patience 20 --save logs/finetuned
+python train.py --data  data/METR-LA_12_6 --cat_feat_gc --fill_zeroes --do_graph_conv --adaptive_adjacency_matrix  --random_init_adjacency_matrix --es_patience 20 --save logs/front_6
+python train.py --checkpoint  logs/front_6/best_model.pth --cat_feat_gc --fill_zeroes --do_graph_conv --adaptive_adjacency_matrix  --random_init_adjacency_matrix --es_patience 20 --save logs/finetuned
 
 ```
 Original Graph Wavenet Model (3.04-3.07 MAE)
 ```
-python train.py --clip 5 --lr_decay_rate 1. --nhid 32 --do_graph_conv --addaptadj  --randomadj --save logs/baseline
+python train.py --clip 5 --lr_decay_rate 1. --num_hid 32 --do_graph_conv --adaptive_adjacency_matrix  --random_init_adjacency_matrix --save logs/baseline
 ```
 
 You can also train from a jupyter notebook with
@@ -60,10 +60,10 @@ args = pickle_load('baseline_args.pkl') # manipulate these in python
 args.lr_decay_rate = .97
 args.clip = 3
 args.save = 'logs/from_jupyter'
-main(args) # takes roughly an hour depending on nhid, and early_stopping
+main(args) # takes roughly an hour depending on num_hid, and early_stopping
 ```
 
-Train models configured in Table 3 of the original GraphWavenet paper by using the `--adjtype, --addaptadj, --aptonly` command line argument.
+Train models configured in Table 3 of the original GraphWavenet paper by using the `--adjacency_type, --adaptive_adjacency_matrix, --adaptive_adjacency_matrix_only` command line argument.
 These flags are (somewhat) documented in util.py.
 
 Run unitests with `pytest`

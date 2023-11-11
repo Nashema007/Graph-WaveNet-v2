@@ -12,8 +12,8 @@ TRAIN_ARGS = 'test_args.pkl'
 TEST_ARGS = 'test_script_args.pkl'
 SAVE_DIR = 'utest_experiment/'
 ARG_UPDATES = {'epochs': 1, 'n_iters': 1, 'batch_size': 2, 'n_obs': 2,
-               'device': util.DEFAULT_DEVICE, 'save': SAVE_DIR, 'addaptadj': True,
-               'apt_size': 2, 'nhid': 1, 'lr_decay_rate': 1.,
+               'device': util.DEFAULT_DEVICE, 'save': SAVE_DIR, 'adaptive_adjacency_matrix': True,
+               'apt_size': 2, 'num_hid': 1, 'lr_decay_rate': 1.,
                'in_dim': 1, 'cat_feat_gc': True, 'clip': 1, 'es_patience': 10,
                'checkpoint': '', 'fill_zeroes': False}
 
