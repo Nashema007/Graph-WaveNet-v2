@@ -15,3 +15,5 @@ venv
 /notebooks/**npz
 /logs
 *.out
+/logs-variable-window-size
+/results-variable-window-size
