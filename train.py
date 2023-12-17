@@ -15,7 +15,7 @@ import wandb
 from pathlib import PurePath, Path
 
 def main(args, **model_kwargs):
-    wandb.init(project="graph-wavenet-v2",
+    wandb.init(project="gwn-v2-exp-window-12",
                entity="nashema007",
             #    mode='disabled',
                config={
@@ -54,11 +54,12 @@ def main(args, **model_kwargs):
     # torch.manual_seed(config.seed)
     # np.random.seed(config.seed)
     if torch.cuda.is_available():
-        device = torch.device('cuda:1')
+        device = torch.device('cuda:0')
     # elif torch.backends.mps.is_available():
     #     device = torch.device('mps')
     else:
         device = torch.device('cpu')
+    print('CUDA\t', device, torch.cuda.is_available())
     wandb.config.update({"seed": torch.seed()})
     data = util.load_dataset(args.data, config.batch_size, config.batch_size, config.batch_size, n_obs=args.n_obs, fill_zeroes=config.fill_zeroes)
     scaler = data['scaler']
@@ -87,11 +88,11 @@ def main(args, **model_kwargs):
             trainy = torch.Tensor(y).to(device).transpose(1, 3)
             yspeed = trainy[:, 0, :, :]
             if yspeed.max() == 0: continue
-            mae, mape, rmse = engine.train(trainx, yspeed)
+            mae, mape, rmse, mae_station  = engine.train(trainx, yspeed)
             train_loss.append(mae)
             train_mape.append(mape)
             train_rmse.append(rmse)
-            t_station_loss.append(masked_mae_station(trainy, trainx, 0.0).cpu().detach().numpy())
+            t_station_loss.append(mae_station)
             if config.n_iters is not None and iter >= config.n_iters:
                 break
         engine.scheduler.step()
@@ -165,7 +166,7 @@ def eval_(ds, device, engine):
         valid_loss.append(metrics[0])
         valid_mape.append(metrics[1])
         valid_rmse.append(metrics[2])
-        v_station_loss.append(masked_mae_station(testy, testx, 0.0).cpu().detach().numpy())
+        v_station_loss.append(metrics[3])
     total_time = time.time() - s1
     return total_time, valid_loss, valid_mape, valid_rmse, v_station_loss
 

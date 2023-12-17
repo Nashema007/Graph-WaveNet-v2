@@ -24,13 +24,16 @@ class Trainer():
         input = nn.functional.pad(input,(1,0,0,0))
         output = self.model(input).transpose(1,3)  # now, output = [batch_size,1,num_nodes, seq_length]
         predict = self.scaler.inverse_transform(output)
-        assert predict.shape[1] == 1
-        mae, mape, rmse = self.loss(predict.squeeze(1), real_val, null_val=0.0)
+        # assert predict.shape[1] == 1
+        real = torch.unsqueeze(real_val, dim=1)
+        # mae, mape, rmse = self.loss(predict.squeeze(1), real_val, null_val=0.0)
+        mae, mape, rmse = self.loss(predict, real, null_val=0.0)
+        mae_station = util.masked_mae_station(predict, real, 0.0).cpu().detach().numpy()
         mae.backward()
         if self.clip is not None:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
         self.optimizer.step()
-        return mae.item(),mape.item(),rmse.item()
+        return mae.item(),mape.item(),rmse.item(), mae_station
 
     def eval(self, input, real_val):
         self.model.eval()
@@ -40,4 +43,5 @@ class Trainer():
         predict = self.scaler.inverse_transform(output)
         predict = torch.clamp(predict, min=0., max=70.)
         mae, mape, rmse = [x.item() for x in self.loss(predict, real, null_val=0.0)]
-        return mae, mape, rmse
+        mae_station = util.masked_mae_station(predict, real, 0.0).cpu().detach().numpy()
+        return mae, mape, rmse, mae_station
