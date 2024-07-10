@@ -250,6 +250,33 @@ def calc_tstep_metrics(model, device, test_loader, scaler, realy, seq_length) ->
     return test_met_df, yhat, predList, realList, test_station_loss
 
 
+def calc_tstep_metrics_v(model, device, test_loader, scaler, realy, seq_length) -> pd.DataFrame:
+    model.eval()
+    outputs = []
+    predList = []
+    realList = []
+    test_station_loss = []
+    for _, (x, __) in enumerate(test_loader.get_iterator()):
+        testx = torch.Tensor(x).to(device).transpose(1, 3)
+        with torch.no_grad():
+            preds = model(testx).transpose(1, 3)
+        outputs.append(preds.mean(dim=1))
+    yhat = torch.cat(outputs, dim=0)[:realy.size(0), ...]
+    test_met = []
+
+    for i in range(seq_length):
+        pred = scaler.inverse_transform(yhat[:, :, i])
+        pred = torch.clamp(pred, min=0., max=70.)
+        real = realy[:, :, i]
+        predList.append(pred.cpu().detach().numpy())
+        realList.append(real.cpu().detach().numpy())
+        
+        test_met.append([x.item() for x in calc_metrics(pred, real)])
+        test_station_loss.append(masked_mae_station(pred, real, 0.0).cpu().detach().numpy().mean(axis=0).reshape((1, -1)).flatten())
+    test_met_df = pd.DataFrame(test_met, columns=['mae', 'mape', 'rmse']).rename_axis('t')
+    return test_met_df, yhat, predList, realList, test_station_loss
+
+
 def _to_ser(arr):
     return pd.DataFrame(arr.cpu().detach().numpy()).stack().rename_axis(['obs', 'sensor_id'])
 
